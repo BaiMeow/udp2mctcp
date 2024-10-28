@@ -25,7 +25,7 @@ func Udp2Mctcp(conn *net.UDPConn, w mctcp.Writer) error {
 	writeErr := make(chan error, 1)
 	for {
 		buf := make([]byte, 1600)
-		n, _, err := conn.ReadFromUDP(buf)
+		n, _, err := conn.ReadFrom(buf)
 		if err != nil {
 			return err
 		}

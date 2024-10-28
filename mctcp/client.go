@@ -15,8 +15,6 @@ var (
 	ErrBrokenConn = errors.New("broken connection")
 )
 
-const ReadBufferSize = 128
-
 type Client struct {
 	ctx      context.Context
 	size     int
@@ -30,28 +28,30 @@ type Client struct {
 	pool *TcpPool
 }
 
-func NewClient(ctx context.Context, size int, addr string) (*Client, error) {
+func NewClient(ctx context.Context, size int, readBufferSize int, addr string) (*Client, error) {
 	c := new(Client)
 	c.size = size
 	c.dialAddr = addr
 	c.ctx = ctx
-	c.pool = NewPool(ctx, size)
+	c.pool = NewPool(ctx, size, readBufferSize)
 	c.pool.RegisterTcpReadFailed(func(err error) {
 		if errors.Is(err, ErrBrokenConn) {
-			zap.L().Debug("read connection broken")
+			zap.L().Debug("read connection broken", zap.Error(err))
 			c.counterLock.Lock()
 			defer c.counterLock.Unlock()
 			c.readBrokenCounter++
 			if c.readBrokenCounter > c.resumeCounter {
 				c.resumeCounter++
+				zap.L().Debug("try add connection",
+					zap.Int("resumeCounter", c.resumeCounter),
+					zap.Int("readBrokenCounter", c.readBrokenCounter),
+				)
+				go func() {
+					_ = utils.Retry(func() error {
+						return c.addConn()
+					}, 3)
+				}()
 			}
-
-			zap.L().Debug("try add connection")
-			go func() {
-				_ = utils.Retry(func() error {
-					return c.addConn()
-				}, 3)
-			}()
 		}
 
 	})
@@ -79,14 +79,16 @@ func (c *Client) Write(buf []byte) error {
 		c.writeBrokenCounter++
 		if c.writeBrokenCounter > c.resumeCounter {
 			c.resumeCounter++
+			zap.L().Debug("try add connection",
+				zap.Int("resumeCounter", c.resumeCounter),
+				zap.Int("writeBrokenCounter", c.writeBrokenCounter),
+			)
+			go func() {
+				_ = utils.Retry(func() error {
+					return c.addConn()
+				}, 3)
+			}()
 		}
-
-		zap.L().Debug("try add connection")
-		go func() {
-			_ = utils.Retry(func() error {
-				return c.addConn()
-			}, 3)
-		}()
 		return nil
 	}
 	return err
@@ -129,10 +131,10 @@ func createConnection(addr string) (*net.TCPConn, error) {
 	}
 	tconn := conn.(*net.TCPConn)
 	if err := tconn.SetKeepAlive(true); err != nil {
-		return nil, fmt.Errorf("enable keepalive failed: %v", err)
+		zap.L().Warn("set keepalive failed", zap.Error(err))
 	}
 	if err := tconn.SetNoDelay(true); err != nil {
-		return nil, fmt.Errorf("set nodelay failed: %v", err)
+		zap.L().Warn("set nodelay failed", zap.Error(err))
 	}
 	return conn.(*net.TCPConn), nil
 }

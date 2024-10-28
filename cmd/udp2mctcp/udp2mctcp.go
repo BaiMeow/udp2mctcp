@@ -11,15 +11,17 @@ import (
 )
 
 var (
-	udpListenAddr string
-	forwarderAddr string
-	connCount     int
+	udpListenAddr  string
+	forwarderAddr  string
+	connCount      int
+	readBufferSize int
 )
 
 func main() {
 	flag.StringVar(&udpListenAddr, "l", "", "udp listen port")
 	flag.StringVar(&forwarderAddr, "f", "", "tcp forwarder addr")
 	flag.IntVar(&connCount, "c", 8, "tcp connection count")
+	flag.IntVar(&readBufferSize, "b", 4096, "read buffer size")
 	level := zap.LevelFlag("log", zap.InfoLevel, "log level")
 	flag.Parse()
 	log.Init(*level)
@@ -29,9 +31,24 @@ func main() {
 		zap.L().Fatal("listen udp", zap.Error(err))
 	}
 
+	// drop first packet, and fetch the addr
+	_, addr, err := conn.ReadFrom(nil)
+	if err != nil {
+		zap.L().Fatal("read from", zap.Error(err))
+	}
+
+	if err := conn.Close(); err != nil {
+		zap.L().Fatal("close udp", zap.Error(err))
+	}
+
+	conn, err = net.DialUDP("udp", conn.LocalAddr().(*net.UDPAddr), addr.(*net.UDPAddr))
+	if err != nil {
+		zap.L().Fatal("dial udp", zap.Error(err))
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 
-	c, err := mctcp.NewClient(ctx, connCount, forwarderAddr)
+	c, err := mctcp.NewClient(ctx, connCount, readBufferSize, forwarderAddr)
 	if err != nil {
 		zap.L().Fatal("new client", zap.Error(err))
 	}

@@ -15,12 +15,12 @@ type Server struct {
 	pool *TcpPool
 }
 
-func NewServer(ctx context.Context, size int, addr string) (*Server, error) {
+func NewServer(ctx context.Context, size int, readBufferSize int, addr string) (*Server, error) {
 	s := new(Server)
 	s.size = size
 	s.listenAddr = addr
 	s.ctx = ctx
-	s.pool = NewPool(ctx, size)
+	s.pool = NewPool(ctx, size, readBufferSize)
 	go func() {
 		err := s.ListenAndAccept()
 		if err != nil {
@@ -42,6 +42,13 @@ func (s *Server) ListenAndAccept() error {
 			return err
 		}
 		zap.L().Debug("accept tcp connection", zap.String("from", conn.RemoteAddr().String()))
+		tconn := conn.(*net.TCPConn)
+		if err := tconn.SetKeepAlive(true); err != nil {
+			zap.L().Warn("set keepalive failed", zap.Error(err))
+		}
+		if err := tconn.SetNoDelay(true); err != nil {
+			zap.L().Warn("set nodelay failed", zap.Error(err))
+		}
 		s.pool.Push(conn.(*net.TCPConn))
 	}
 }

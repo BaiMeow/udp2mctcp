@@ -13,24 +13,26 @@ import (
 const DefaultPoolSize = 16
 
 var (
-	forwarderAddr string
-	tcpListenAddr string
+	udpForwarderAddr string
+	tcpListenAddr    string
+	readBufferSize   int
 )
 
 func main() {
-	flag.StringVar(&forwarderAddr, "f", "", "udp forwarder addr")
+	flag.StringVar(&udpForwarderAddr, "f", "", "udp forwarder addr")
 	flag.StringVar(&tcpListenAddr, "l", "", "tcp listen addr")
+	flag.IntVar(&readBufferSize, "b", 4096, "read buffer size")
 	level := zap.LevelFlag("log", zap.InfoLevel, "log level")
 	flag.Parse()
 	log.Init(*level)
 
-	conn, err := net.Dial("udp", forwarderAddr)
+	conn, err := net.Dial("udp", udpForwarderAddr)
 	if err != nil {
 		zap.L().Fatal("dial udp", zap.Error(err))
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	s, err := mctcp.NewServer(ctx, DefaultPoolSize, tcpListenAddr)
+	s, err := mctcp.NewServer(ctx, DefaultPoolSize, readBufferSize, tcpListenAddr)
 	if err != nil {
 		zap.L().Fatal("new server", zap.Error(err))
 	}

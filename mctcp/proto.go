@@ -15,7 +15,7 @@ func Stream2Packet(r io.Reader) ([]byte, error) {
 	}
 	contentLen := binary.BigEndian.Uint16(lenRaw[:])
 	contentRaw := make([]byte, contentLen)
-	if _, err := io.ReadFull(r, contentRaw[:]); err != nil {
+	if _, err := io.ReadFull(r, contentRaw); err != nil {
 		return nil, errors.Join(ErrBrokenConn, err)
 	}
 	return contentRaw, nil

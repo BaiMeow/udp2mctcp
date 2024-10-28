@@ -1,6 +1,7 @@
 package mctcp
 
 import (
+	"bufio"
 	"context"
 	"go.uber.org/zap"
 	"net"
@@ -16,16 +17,16 @@ type TcpPool struct {
 
 	// lock for writerPool
 	lock       sync.RWMutex
-	writerPool chan *net.TCPConn
+	writerPool chan *MarkConn
 
 	readBuffer         chan []byte
 	eventTcpReadFailed func(err error)
 }
 
-func NewPool(ctx context.Context, size int) *TcpPool {
+func NewPool(ctx context.Context, size int, readBufferSize int) *TcpPool {
 	p := &TcpPool{
-		writerPool: make(chan *net.TCPConn, size),
-		readBuffer: make(chan []byte, ReadBufferSize),
+		writerPool: make(chan *MarkConn, size),
+		readBuffer: make(chan []byte, readBufferSize),
 		ctx:        ctx,
 	}
 	p.size.Store(int32(size))
@@ -33,23 +34,25 @@ func NewPool(ctx context.Context, size int) *TcpPool {
 	return p
 }
 
-func (p *TcpPool) watchTcp(c *net.TCPConn) {
+func (p *TcpPool) watchTcp(c *MarkConn) {
+	r := bufio.NewReader(c)
+	defer c.Close()
 	for {
 		if p.Closed() {
-			_ = c.Close()
 			return
 		}
-		buf, err := Stream2Packet(c)
-		zap.L().Debug("tcp->",
-			zap.Int("len", len(buf)),
-			zap.String("from", c.RemoteAddr().String()),
-			zap.String("to", c.LocalAddr().String()))
+		buf, err := Stream2Packet(r)
 		if err != nil {
+			zap.L().Debug("read tcp", zap.Error(err))
 			if p.eventTcpReadFailed != nil {
 				p.eventTcpReadFailed(err)
 			}
 			return
 		}
+		zap.L().Debug("tcp->",
+			zap.Int("len", len(buf)),
+			zap.String("from", c.RemoteAddr().String()),
+			zap.String("to", c.LocalAddr().String()))
 		select {
 		case p.readBuffer <- buf:
 		default:
@@ -82,16 +85,18 @@ RETRY:
 		zap.L().Debug("enlarge writer pool", zap.Int("newsize", int(oldSize*2)))
 		p.lock.Lock()
 		oldPool := p.writerPool
-		p.writerPool = make(chan *net.TCPConn, oldSize*2)
+		p.writerPool = make(chan *MarkConn, oldSize*2)
 		close(oldPool)
 		for c := range oldPool {
 			p.writerPool <- c
 		}
 		p.lock.Unlock()
 	}
-
-	p.writerPool <- conn
-	go p.watchTcp(conn)
+	p.lock.RLock()
+	markConn := NewMarkConn(conn)
+	p.writerPool <- markConn
+	p.lock.RUnlock()
+	go p.watchTcp(markConn)
 }
 
 func (p *TcpPool) RegisterTcpReadFailed(fn func(err error)) {
@@ -112,8 +117,12 @@ func (p *TcpPool) Write(buf []byte) error {
 		return ErrClosed
 	}
 	p.lock.RLock()
+RETRY:
 	select {
 	case conn := <-p.writerPool:
+		if !conn.IsAvailable() {
+			goto RETRY
+		}
 		p.lock.RUnlock()
 		if err := Packet2Stream(buf, conn); err != nil {
 			p.current.Add(-1)
