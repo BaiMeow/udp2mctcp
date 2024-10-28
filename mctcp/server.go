@@ -2,6 +2,7 @@ package mctcp
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net"
 )
@@ -49,5 +50,9 @@ func (s *Server) Read() ([]byte, error) {
 }
 
 func (s *Server) Write(buf []byte) error {
-	return s.pool.Write(buf)
+	err := s.pool.Write(buf)
+	if err != nil && !errors.Is(err, ErrBrokenConn) {
+		return err
+	}
+	return nil
 }
