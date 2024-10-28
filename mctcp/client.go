@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"github.com/BaiMeow/udp2mctcp/utils"
 	"go.uber.org/zap"
+	"golang.org/x/time/rate"
 	"net"
 	"sync"
+	"time"
 )
 
 var (
@@ -16,9 +18,10 @@ var (
 )
 
 type Client struct {
-	ctx      context.Context
-	size     int
-	dialAddr string
+	ctx             context.Context
+	size            int
+	dialAddr        string
+	dialRateLimiter *rate.Limiter
 
 	resumeCounter      int
 	readBrokenCounter  int
@@ -32,6 +35,7 @@ func NewClient(ctx context.Context, size int, readBufferSize int, addr string) (
 	c := new(Client)
 	c.size = size
 	c.dialAddr = addr
+	c.dialRateLimiter = rate.NewLimiter(rate.Every(time.Second/4), 4)
 	c.ctx = ctx
 	c.pool = NewPool(ctx, size, readBufferSize)
 	c.pool.RegisterTcpReadFailed(func(err error) {
@@ -56,6 +60,9 @@ func NewClient(ctx context.Context, size int, readBufferSize int, addr string) (
 
 	})
 	for range size {
+		if err := c.dialRateLimiter.Wait(ctx); err != nil {
+			return nil, err
+		}
 		tconn, err := createConnection(addr)
 		if err != nil {
 			return nil, fmt.Errorf("create connection failed: %v", err)
@@ -111,6 +118,9 @@ func (c *Client) Closed() bool {
 }
 
 func (c *Client) addConn() error {
+	if err := c.dialRateLimiter.Wait(c.ctx); err != nil {
+		return err
+	}
 	tconn, err := createConnection(c.dialAddr)
 	if err != nil {
 		return fmt.Errorf("create connection failed: %v", err)
@@ -136,5 +146,6 @@ func createConnection(addr string) (*net.TCPConn, error) {
 	if err := tconn.SetNoDelay(true); err != nil {
 		zap.L().Warn("set nodelay failed", zap.Error(err))
 	}
+	zap.L().Info("new connection", zap.String("conn", fmt.Sprintf("%s <-> %s", conn.LocalAddr().String(), conn.RemoteAddr().String())))
 	return conn.(*net.TCPConn), nil
 }

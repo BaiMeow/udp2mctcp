@@ -36,12 +36,13 @@ func (s *Server) ListenAndAccept() error {
 		return err
 	}
 
+	zap.L().Info("listen tcp", zap.String("addr", s.listenAddr))
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
 			return err
 		}
-		zap.L().Debug("accept tcp connection", zap.String("from", conn.RemoteAddr().String()))
+		zap.L().Info("accept tcp connection", zap.String("from", conn.RemoteAddr().String()))
 		tconn := conn.(*net.TCPConn)
 		if err := tconn.SetKeepAlive(true); err != nil {
 			zap.L().Warn("set keepalive failed", zap.Error(err))

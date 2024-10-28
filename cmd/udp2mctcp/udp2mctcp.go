@@ -32,10 +32,12 @@ func main() {
 	}
 
 	// drop first packet, and fetch the addr
+	zap.L().Info("waiting for first udp packet, to get udp forward addr")
 	_, addr, err := conn.ReadFrom(nil)
 	if err != nil {
 		zap.L().Fatal("read from", zap.Error(err))
 	}
+	zap.L().Info("got udp forward addr", zap.String("addr", addr.String()))
 
 	if err := conn.Close(); err != nil {
 		zap.L().Fatal("close udp", zap.Error(err))
@@ -59,6 +61,7 @@ func main() {
 		zap.L().Fatal("mctcp2udp fail", zap.Error(err))
 		cancel()
 	}()
+	zap.L().Info("run mctcp -> udp")
 
 	// udp -> mctcp
 	go func() {
@@ -66,6 +69,8 @@ func main() {
 		zap.L().Fatal("udp2mctcp fail", zap.Error(err))
 		cancel()
 	}()
+	zap.L().Info("run udp -> mctcp")
 
+	zap.L().Info("setup done")
 	<-ctx.Done()
 }

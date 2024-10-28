@@ -43,6 +43,7 @@ func main() {
 		zap.L().Fatal("mctcp2udp fail", zap.Error(err))
 		cancel()
 	}()
+	zap.L().Info("run mctcp -> udp")
 
 	// udp -> mctcp
 	go func() {
@@ -50,6 +51,8 @@ func main() {
 		zap.L().Fatal("udp2mctcp fail", zap.Error(err))
 		cancel()
 	}()
+	zap.L().Info("run udp -> mctcp")
 
+	zap.L().Info("setup done")
 	<-ctx.Done()
 }
