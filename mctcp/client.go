@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/BaiMeow/udp2mctcp/utils"
+	"go.uber.org/zap"
 	"net"
 	"sync"
 )
@@ -37,12 +38,15 @@ func NewClient(ctx context.Context, size int, addr string) (*Client, error) {
 	c.pool = NewPool(ctx, size)
 	c.pool.RegisterTcpReadFailed(func(err error) {
 		if errors.Is(err, ErrBrokenConn) {
+			zap.L().Debug("read connection broken")
 			c.counterLock.Lock()
 			defer c.counterLock.Unlock()
 			c.readBrokenCounter++
 			if c.readBrokenCounter > c.resumeCounter {
 				c.resumeCounter++
 			}
+
+			zap.L().Debug("try add connection")
 			go func() {
 				_ = utils.Retry(func() error {
 					return c.addConn()
@@ -69,12 +73,15 @@ func (c *Client) Write(buf []byte) error {
 
 	err := c.pool.Write(buf)
 	if errors.Is(err, ErrBrokenConn) {
+		zap.L().Debug("write connection broken")
 		c.counterLock.Lock()
 		defer c.counterLock.Unlock()
 		c.writeBrokenCounter++
 		if c.writeBrokenCounter > c.resumeCounter {
 			c.resumeCounter++
 		}
+
+		zap.L().Debug("try add connection")
 		go func() {
 			_ = utils.Retry(func() error {
 				return c.addConn()
@@ -106,6 +113,11 @@ func (c *Client) addConn() error {
 	if err != nil {
 		return fmt.Errorf("create connection failed: %v", err)
 	}
+	zap.L().Info("new connection",
+		zap.String("conn", fmt.Sprintf("%s <-> %s",
+			tconn.LocalAddr().String(),
+			tconn.RemoteAddr().String(),
+		)))
 	c.pool.Push(tconn)
 	return nil
 }

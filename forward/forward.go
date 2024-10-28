@@ -2,6 +2,7 @@ package forward
 
 import (
 	"github.com/BaiMeow/udp2mctcp/mctcp"
+	"go.uber.org/zap"
 	"net"
 )
 
@@ -11,10 +12,12 @@ func Mctcp2Udp(r mctcp.Reader, conn *net.UDPConn) error {
 		if err != nil {
 			return err
 		}
+		zap.L().Debug("mctcp->", zap.Int("len", len(buf)))
 		_, err = conn.Write(buf)
 		if err != nil {
 			return err
 		}
+		zap.L().Debug("->udp", zap.Int("len", len(buf)))
 	}
 }
 
@@ -26,6 +29,7 @@ func Udp2Mctcp(conn *net.UDPConn, w mctcp.Writer) error {
 		if err != nil {
 			return err
 		}
+		zap.L().Debug("udp->", zap.Int("len", n))
 		buf = buf[:n]
 
 		// check writer ok
@@ -40,6 +44,7 @@ func Udp2Mctcp(conn *net.UDPConn, w mctcp.Writer) error {
 			if err != nil {
 				writeErr <- err
 			}
+			zap.L().Debug("->mctcp", zap.Int("len", n))
 		}()
 	}
 }

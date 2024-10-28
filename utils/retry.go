@@ -1,6 +1,8 @@
 package utils
 
-import "log"
+import (
+	"go.uber.org/zap"
+)
 
 func Retry(fn func() error, maxRetry int) error {
 	var err error
@@ -9,7 +11,7 @@ func Retry(fn func() error, maxRetry int) error {
 		if err == nil {
 			return nil
 		}
-		log.Printf("retry %d, err: %v", i, err)
+		zap.L().Warn("try failed", zap.Int("retry", i), zap.Error(err))
 	}
 	return err
 }

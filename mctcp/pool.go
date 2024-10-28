@@ -2,6 +2,7 @@ package mctcp
 
 import (
 	"context"
+	"go.uber.org/zap"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -39,6 +40,10 @@ func (p *TcpPool) watchTcp(c *net.TCPConn) {
 			return
 		}
 		buf, err := Stream2Packet(c)
+		zap.L().Debug("tcp->",
+			zap.Int("len", len(buf)),
+			zap.String("from", c.RemoteAddr().String()),
+			zap.String("to", c.LocalAddr().String()))
 		if err != nil {
 			if p.eventTcpReadFailed != nil {
 				p.eventTcpReadFailed(err)
@@ -48,6 +53,7 @@ func (p *TcpPool) watchTcp(c *net.TCPConn) {
 		select {
 		case p.readBuffer <- buf:
 		default:
+			zap.L().Debug("read buffer full, drop packet")
 			// drop packet
 		}
 	}
@@ -63,7 +69,8 @@ func (p *TcpPool) Closed() bool {
 }
 
 func (p *TcpPool) Push(conn *net.TCPConn) {
-	p.current.Add(1)
+	cur := p.current.Add(1)
+	zap.L().Debug("add connection", zap.Int("current", int(cur)))
 RETRY:
 	oldCurrent := p.current.Load()
 	oldSize := p.size.Load()
@@ -72,6 +79,7 @@ RETRY:
 			goto RETRY
 		}
 		// enlarge
+		zap.L().Debug("enlarge writer pool", zap.Int("newsize", int(oldSize*2)))
 		p.lock.Lock()
 		oldPool := p.writerPool
 		p.writerPool = make(chan *net.TCPConn, oldSize*2)
@@ -108,9 +116,11 @@ func (p *TcpPool) Write(buf []byte) error {
 	case conn := <-p.writerPool:
 		p.lock.RUnlock()
 		if err := Packet2Stream(buf, conn); err != nil {
+			p.current.Add(-1)
 			return err
 		}
 		p.lock.RLock()
+		zap.L().Debug("->tcp", zap.Int("len", len(buf)))
 		p.writerPool <- conn
 		p.lock.RUnlock()
 	default:

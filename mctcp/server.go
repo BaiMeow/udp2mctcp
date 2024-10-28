@@ -3,7 +3,7 @@ package mctcp
 import (
 	"context"
 	"errors"
-	"log"
+	"go.uber.org/zap"
 	"net"
 )
 
@@ -24,7 +24,7 @@ func NewServer(ctx context.Context, size int, addr string) (*Server, error) {
 	go func() {
 		err := s.ListenAndAccept()
 		if err != nil {
-			log.Printf("listen and accept: %v", err)
+			zap.L().Error("listen and accept", zap.Error(err))
 		}
 	}()
 	return s, nil
@@ -41,6 +41,7 @@ func (s *Server) ListenAndAccept() error {
 		if err != nil {
 			return err
 		}
+		zap.L().Debug("accept tcp connection", zap.String("from", conn.RemoteAddr().String()))
 		s.pool.Push(conn.(*net.TCPConn))
 	}
 }
